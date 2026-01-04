@@ -1,207 +1,132 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+import streamlit as st
+import random
 
-# C extensions
-*.so
+# --- 1. 核心邏輯區 (函式) ---
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+def create_deck():
+    """ 建立一副 52 張的撲克牌，使用 Emoji """
+    suits = ['♠️', '♥️', '♦️', '♣️']
+    ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+    deck = []
+    for suit in suits:
+        for rank in ranks:
+            deck.append(f"{suit} {rank}")
+    random.shuffle(deck)
+    return deck
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+def calculate_score(hand):
+    """ 計算手牌分數，處理 A 的 1 或 11 點邏輯 """
+    score = 0
+    aces = 0
+    
+    for card in hand:
+        rank = card.split()[1] # 取得花色後面的數字/文字
+        if rank in ['J', 'Q', 'K']:
+            score += 10
+        elif rank == 'A':
+            aces += 1
+            score += 11
+        else:
+            score += int(rank)
+            
+    # 如果爆牌了 (超過 21) 且還有 A，把 A 當作 1 點
+    while score > 21 and aces > 0:
+        score -= 10
+        aces -= 1
+        
+    return score
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# --- 2. 遊戲初始化 (Session State) ---
+# Streamlit 每次按按鈕都會重跑程式，所以要把變數存在 session_state 裡
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
+if 'deck' not in st.session_state:
+    st.session_state.deck = []
+if 'player_hand' not in st.session_state:
+    st.session_state.player_hand = []
+if 'dealer_hand' not in st.session_state:
+    st.session_state.dealer_hand = []
+if 'game_over' not in st.session_state:
+    st.session_state.game_over = True # 一開始設為 True 讓玩家按「開始遊戲」
+if 'message' not in st.session_state:
+    st.session_state.message = "點擊下方按鈕開始遊戲！"
 
-# Translations
-*.mo
-*.pot
+# --- 3. 按鈕事件處理 ---
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+def start_game():
+    st.session_state.deck = create_deck()
+    st.session_state.player_hand = [st.session_state.deck.pop(), st.session_state.deck.pop()]
+    st.session_state.dealer_hand = [st.session_state.deck.pop(), st.session_state.deck.pop()]
+    st.session_state.game_over = False
+    st.session_state.message = "你的回合：要加牌 (Hit) 還是停牌 (Stand)？"
 
-# Flask stuff:
-instance/
-.webassets-cache
+def hit():
+    card = st.session_state.deck.pop()
+    st.session_state.player_hand.append(card)
+    p_score = calculate_score(st.session_state.player_hand)
+    
+    if p_score > 21:
+        st.session_state.message = "💥 爆牌了！你輸了！"
+        st.session_state.game_over = True
 
-# Scrapy stuff:
-.scrapy
+def stand():
+    # 玩家停牌，換莊家行動
+    p_score = calculate_score(st.session_state.player_hand)
+    d_score = calculate_score(st.session_state.dealer_hand)
+    
+    # 莊家邏輯：小於 17 點必須加牌
+    while d_score < 17:
+        st.session_state.dealer_hand.append(st.session_state.deck.pop())
+        d_score = calculate_score(st.session_state.dealer_hand)
+    
+    # 結算勝負
+    if d_score > 21:
+        st.session_state.message = "🎉 莊家爆牌！你贏了！"
+    elif p_score > d_score:
+        st.session_state.message = "🎉 你的點數比較大！你贏了！"
+    elif p_score < d_score:
+        st.session_state.message = "💸 莊家點數比較大，你輸了..."
+    else:
+        st.session_state.message = "🤝 平手 (Push)！"
+    
+    st.session_state.game_over = True
 
-# Sphinx documentation
-docs/_build/
+# --- 4. 畫面顯示 (UI) ---
 
-# PyBuilder
-.pybuilder/
-target/
+st.title("🎲 Streamlit 21 點 (無圖檔版)")
+st.write(st.session_state.message)
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# 顯示遊戲區域 (如果遊戲正在進行或剛結束)
+if st.session_state.deck:
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("你的手牌")
+        # 顯示卡牌
+        st.info("  ".join(st.session_state.player_hand)) 
+        p_score = calculate_score(st.session_state.player_hand)
+        st.write(f"目前點數：**{p_score}**")
 
-# IPython
-profile_default/
-ipython_config.py
+    with col2:
+        st.subheader("莊家的手牌")
+        if st.session_state.game_over:
+            # 遊戲結束，翻開所有牌
+            st.warning("  ".join(st.session_state.dealer_hand))
+            d_score = calculate_score(st.session_state.dealer_hand)
+            st.write(f"莊家點數：**{d_score}**")
+        else:
+            # 遊戲中，蓋住一張牌
+            hidden_card = "🂠 (蓋牌)" # 也可以用 ? 代替
+            visible_card = st.session_state.dealer_hand[0]
+            st.warning(f"{visible_card}   {hidden_card}")
+            st.write("莊家點數：?")
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-#poetry.toml
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-#pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
-
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
-
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+# 操作按鈕
+st.write("---")
+if st.session_state.game_over:
+    st.button("🔄 開始新的一局", on_click=start_game, type="primary")
+else:
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.button("➕ 加牌 (Hit)", on_click=hit, use_container_width=True)
+    with col_b:
+        st.button("🛑 停牌 (Stand)", on_click=stand, use_container_width=True)
